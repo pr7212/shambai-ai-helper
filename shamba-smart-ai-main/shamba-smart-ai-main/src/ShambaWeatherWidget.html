@@ -1,0 +1,110 @@
+<!-- Place this in your dashboard HTML -->
+<div id="shamba-weather-widget"></div>
+<script>
+  const farmingZones = [
+    { name: 'Nairobi', lat: -1.286389, lon: 36.817223 },
+    { name: 'Nakuru', lat: -0.303099, lon: 36.080025 },
+    { name: 'Kisumu', lat: -0.091702, lon: 34.768 },
+    { name: 'Mombasa', lat: -4.043477, lon: 39.668206 },
+    { name: 'Kampala', lat: 0.347596, lon: 32.58252 },
+    { name: 'Dar es Salaam', lat: -6.792354, lon: 39.208328 },
+    { name: 'Kigali', lat: -1.970579, lon: 30.104429 },
+    { name: 'Addis Ababa', lat: 9.03, lon: 38.74 },
+  ];
+
+  async function getWeather(lat, lon, crop) {
+    const res = await fetch(
+      `/api/weather?lat=${lat}&lon=${lon}&active_crop=${encodeURIComponent(crop)}`
+    );
+    if (!res.ok) throw new Error('Weather unavailable');
+    return res.json();
+  }
+
+  function renderWidget(data) {
+    const w = data.current;
+    const forecast = data.forecast;
+    const html = `
+    <div style="background:#f5f3e7;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px #0001;max-width:480px;color:#2e4d1c;font-family:sans-serif;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:1.2em;font-weight:bold;">Current Weather</div>
+          <div style="font-size:2.2em;">${Math.round(w.temp)}°C <img src="https://openweathermap.org/img/wn/${w.icon}@2x.png" style="vertical-align:middle;width:48px;height:48px;"></div>
+          <div style="text-transform:capitalize;">${w.condition}</div>
+          <div>Humidity: ${w.humidity}% | Wind: ${w.wind} km/h${w.uv !== null ? ` | UV: ${w.uv}` : ''}</div>
+        </div>
+      </div>
+      <hr style="border:0;border-top:1px solid #c2b280;margin:12px 0;">
+      <div style="display:flex;gap:8px;overflow-x:auto;">
+        ${forecast
+          .map(
+            (day) => `
+          <div style="flex:1 0 120px;background:#e6f2d6;border-radius:8px;padding:8px;text-align:center;">
+            <div style="font-weight:bold;">${day.day}</div>
+            <img src="https://openweathermap.org/img/wn/${day.icon}.png" style="width:36px;height:36px;">
+            <div>${Math.round(day.high)}° / ${Math.round(day.low)}°C</div>
+            <div style="font-size:0.95em;color:#b8860b;margin:4px 0 0 0;">${day.tip}</div>
+          </div>
+        `
+          )
+          .join('')}
+      </div>
+    </div>
+  `;
+    document.getElementById('shamba-weather-widget').innerHTML = html;
+  }
+
+  async function initWeatherWidget() {
+    let lat,
+      lon,
+      crop = window.userProfile?.active_crop || 'maize';
+    // 1. Try farm coordinates
+    if (window.userProfile?.farms?.length) {
+      lat = window.userProfile.farms[0].latitude;
+      lon = window.userProfile.farms[0].longitude;
+    }
+    // 2. Fallback: region dropdown
+    if (!lat || !lon) {
+      let region = prompt(
+        'Select your region:\n' +
+          farmingZones.map((z, i) => `${i + 1}. ${z.name}`).join('\n')
+      );
+      let idx = parseInt(region) - 1;
+      if (farmingZones[idx]) {
+        lat = farmingZones[idx].lat;
+        lon = farmingZones[idx].lon;
+      }
+    }
+    // 3. Last resort: browser geolocation
+    if (!lat || !lon) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            lat = pos.coords.latitude;
+            lon = pos.coords.longitude;
+            getWeather(lat, lon, crop)
+              .then(renderWidget)
+              .catch(() => showError());
+          },
+          () => showError()
+        );
+        return;
+      } else {
+        showError();
+        return;
+      }
+    }
+    try {
+      const data = await getWeather(lat, lon, crop);
+      renderWidget(data);
+    } catch {
+      showError();
+    }
+  }
+
+  function showError() {
+    document.getElementById('shamba-weather-widget').innerHTML =
+      '<div style="background:#fff3cd;color:#856404;padding:12px;border-radius:8px;">Weather unavailable — check your connection</div>';
+  }
+
+  initWeatherWidget();
+</script>
